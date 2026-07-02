@@ -68,7 +68,7 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     m_set_cmd.data.disp = 1;
     m_set_cmd.data.eco = 0;
     
-    // Перевірка на турбо режим зі старшої половини байту вентилятора
+    // Перевірка на турбо режим
     m_set_cmd.data.turbo = (get_cmd_resp->data.fan == 0x03) ? 1 : 0;
     m_set_cmd.data.mute = 0;
 
@@ -97,7 +97,7 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
 
 void TCLClimate::setup() {
   set_update_interval(UPDATE_INTERVAL_MS);
-  this->set_supported_custom_fan_modes({"Turbo", "Automatic", "1", "2", "3"});
+  this->set_supported_custom_fan_modes({"Automatic", "Turbo", "1", "2", "3"});
 }
 
 void TCLClimate::control_vertical_swing(const std::string &swing_mode) {}
@@ -111,13 +111,16 @@ void TCLClimate::control(const climate::ClimateCall &call) {
     if (call.get_mode().has_value()) {
         climate::ClimateMode climate_mode = *call.get_mode();
         if (climate_mode == climate::CLIMATE_MODE_OFF) {
-            get_cmd_resp.data.power = 0x02; // Код вимкнення з пакету 5
+            get_cmd_resp.data.power = 0x02; // Код вимкнення
         } else {
-            get_cmd_resp.data.power = 0x03; // Код увімкнення з пакетів 1-4
+            get_cmd_resp.data.power = 0x03; // Код увімкнення
             switch (climate_mode) {
                 case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x01; break;
+                case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break;
+                case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x03; break;
                 case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x04; break;
-                default: get_cmd_resp.data.mode = 0x01; break;
+                case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x05; break;
+                default:                             get_cmd_resp.data.mode = 0x01; break;
             }
         }
         should_build_cmd = true;
@@ -138,7 +141,17 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
-  traits.set_supported_modes({climate::CLIMATE_MODE_OFF, climate::CLIMATE_MODE_COOL, climate::CLIMATE_MODE_HEAT});
+  
+  // Додаємо всі нові режими в інтерфейс Home Assistant
+  traits.set_supported_modes({
+    climate::CLIMATE_MODE_OFF, 
+    climate::CLIMATE_MODE_COOL, 
+    climate::CLIMATE_MODE_HEAT,
+    climate::CLIMATE_MODE_DRY,
+    climate::CLIMATE_MODE_FAN_ONLY,
+    climate::CLIMATE_MODE_AUTO
+  });
+  
   traits.set_visual_min_temperature(16.0);
   traits.set_visual_max_temperature(31.0);
   traits.set_visual_target_temperature_step(1.0);
@@ -158,14 +171,13 @@ int TCLClimate::read_data_line(int readch, uint8_t *buffer, int len) {
     static int pos = 0;
     if (readch < 0) return -1;
 
-    // Спрощений збирач пакету: шукаємо початок заголовку BB 01
     if (readch == 0xBB && pos == 0) {
         buffer[pos++] = readch;
         return -1;
     }
     if (pos > 0 && pos < len) {
         buffer[pos++] = readch;
-        if (pos == 21) { // Пакет наповнився (21 байт)
+        if (pos == 21) { 
             int final_len = pos;
             pos = 0;
             return final_len;
@@ -203,46 +215,43 @@ void TCLClimate::loop() {
 
                 this->is_changed = true;
 
-                // ЧИТАЄМО 7-Й БАЙТ НАПРЯМУ З СИРОГО МАСИВУ
-                uint8_t byte7 = m_get_cmd_resp.raw[7]; // Отримуємо сирі 0x31, 0xB1, 0x34 або 0xB4
-                uint8_t high_nibble = (byte7 & 0xF0);  // Старша частина (0x30 або 0xB0)
-                uint8_t low_nibble  = (byte7 & 0x0F);  // Молодша частина (0x01 або 0x04)
+                uint8_t byte7 = m_get_cmd_resp.raw[7]; 
+                uint8_t high_nibble = (byte7 & 0xF0);  
+                uint8_t low_nibble  = (byte7 & 0x0F);  
 
                 // 1. Розбір стану живлення та режимів
-if (high_nibble == 0xA0) {
-    // Якщо перший напівбайт 'A' — кондиціонер 100% вимкнений
-    this->set_mode(climate::CLIMATE_MODE_OFF);
-} else {
-    // В усіх інших випадках кондиціонер вважається УВІМКНЕНИМ
-    switch (low_nibble) {
-        case 0x04:
-            this->set_mode(climate::CLIMATE_MODE_HEAT); // Обігрів
-            break;
-        case 0x01:
-        default:
-            // Якщо 0x01 або будь-який інший невідомий підрежим — вмикаємо Охолодження
-            this->set_mode(climate::CLIMATE_MODE_COOL); 
-            break;
-    }
-}
-
-                // ЧИТАЄМО 8-Й БАЙТ НАПРЯМУ З СИРОГО МАСИВУ
-                uint8_t byte8 = m_get_cmd_resp.raw[8];
-                uint8_t fan_raw = (byte8 & 0xF0) >> 4; // Старша частина (швидкість вентилятора)
-                uint8_t temp_raw = (byte8 & 0x0F);     // Молодша частина (цільова температура)
-
-                // 2. Розбір швидкості вентилятора
-                if (fan_raw == 0x03) {
-                    this->set_custom_fan_mode(StringRef("Turbo"));
+                if (high_nibble == 0xA0) {
+                    this->set_mode(climate::CLIMATE_MODE_OFF);
                 } else {
-                    this->set_custom_fan_mode(StringRef("Automatic"));
+                    switch (low_nibble) {
+                        case 0x01: this->set_mode(climate::CLIMATE_MODE_COOL); break;
+                        case 0x02: this->set_mode(climate::CLIMATE_MODE_DRY); break;
+                        case 0x03: this->set_mode(climate::CLIMATE_MODE_FAN_ONLY); break;
+                        case 0x04: this->set_mode(climate::CLIMATE_MODE_HEAT); break;
+                        case 0x05: this->set_mode(climate::CLIMATE_MODE_AUTO); break;
+                        default:   this->set_mode(climate::CLIMATE_MODE_COOL); break; 
+                    }
+                }
+
+                // ЧИТАЄМО 8-Й БАЙТ
+                uint8_t byte8 = m_get_cmd_resp.raw[8];
+                uint8_t fan_raw = (byte8 & 0xF0) >> 4; 
+                uint8_t temp_raw = (byte8 & 0x0F);     
+
+                // 2. Розбір швидкості вентилятора (01=Шв.1, 02=Шв.2, 03=Шв.3/Турбо, 00=Авто)
+                switch (fan_raw) {
+                    case 0x01: this->set_custom_fan_mode(StringRef("1")); break;
+                    case 0x02: this->set_custom_fan_mode(StringRef("2")); break;
+                    case 0x03: this->set_custom_fan_mode(StringRef("3")); break; 
+                    case 0x00: this->set_custom_fan_mode(StringRef("Automatic")); break;
+                    default:   this->set_custom_fan_mode(StringRef("Automatic")); break;
                 }
 
                 // 3. Розбір Цільової температури
                 float target_t = temp_raw + 16;
                 this->set_target_temperature(target_t);
 
-                // Датчик поточної температури в кімнаті (приблизний розрахунок)
+                // Датчик поточної температури
                 this->set_current_temperature(target_t); 
 
                 if (this->is_changed) {
