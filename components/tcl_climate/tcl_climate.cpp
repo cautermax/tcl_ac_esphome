@@ -106,50 +106,48 @@ void TCLClimate::control(const climate::ClimateCall &call) {
     memcpy(get_cmd_resp.raw, m_get_cmd_resp.raw, sizeof(get_cmd_resp.raw));
     bool should_build_cmd = false;
 
-    // 1. ОБРОБКА РЕЖИМІВ
+    // 1. ВИЗНАЧАЄМО РЕЖИМ (Завжди беремо поточний актуальний режим з Home Assistant)
+    climate::ClimateMode active_mode = this->mode; 
     if (call.get_mode().has_value()) {
-        climate::ClimateMode climate_mode = *call.get_mode();
-        if (climate_mode == climate::CLIMATE_MODE_OFF) {
-            get_cmd_resp.data.power = 0x02; // Вимкнено
-            get_cmd_resp.data.mode = 0x00;  
-        } else {
-            get_cmd_resp.data.power = 0x03; // Увімкнено
-            
-            // Наша залізна матриця
-            switch (climate_mode) {
-                case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x08; break; 
-                case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break; 
-                case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break; 
-                case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break; 
-                case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x07; break; 
-                default:                             get_cmd_resp.data.mode = 0x03; break; 
-            }
-        }
-        should_build_cmd = true;
+        active_mode = *call.get_mode(); // Якщо користувач клацнув новий режим — беремо його
     }
 
-    // 2. ОБРОБКА ТЕМПЕРАТУРИ (З розумним блокуванням)
+    // 2. КОДУЄМО ЖИВЛЕННЯ ТА РЕЖИМ НАПРЯМУ
+    if (active_mode == climate::CLIMATE_MODE_OFF) {
+        get_cmd_resp.data.power = 0x02; // Код вимкнення живлення
+        get_cmd_resp.data.mode = 0x00;  
+    } else {
+        get_cmd_resp.data.power = 0x03; // Код увімкнення живлення
+        
+        // Твоя фінальна перевірена залізна карта кодів
+        switch (active_mode) {
+            case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break; // HEAT = 01
+            case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break; // DRY  = 02
+            case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break; // COOL = 03
+            case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x07; break; // FAN  = 07 (Знайдено! 🎉)
+            case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x08; break; // AUTO = 08 (Знайдено! 🎉)
+            default:                             get_cmd_resp.data.mode = 0x03; break; 
+        }
+    }
+    should_build_cmd = true;
+
+    // 3. ОБРОБКА ТЕМПЕРАТУРИ
     if (call.get_target_temperature().has_value()) {
         float temp = *call.get_target_temperature();
         get_cmd_resp.data.temp = static_cast<uint8_t>(temp) - 16;
-        should_build_cmd = true;
+    } else {
+        // Якщо міняється режим, а не температура — беремо поточну виставлену в HA температуру
+        get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-    // 👇 НАШ ГОЛОВНИЙ ФІКС 👇
-    // Якщо режим AUTO (0x00) або FAN_ONLY (0x04) — залізо пульта занулює байти температури.
-    // get_cmd_resp.data.temp = 0 означає 16°C у сирих байтах, що для плат є нейтральною заглушкою.
-    if (get_cmd_resp.data.mode == 0x00 || get_cmd_resp.data.mode == 0x04) {
-        get_cmd_resp.data.temp = 0x0F; 
-    }
-
-    // 3. ЗБИРАЄМО ПАКЕТ
+    // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ
     if (should_build_cmd) {
         build_set_cmd(&get_cmd_resp);
         
-        // Записуємо режим у 5-й байт
+        // Жорстко записуємо правильний байт режиму в масив відправки, обнуляючи сміття
         m_set_cmd.raw[5] = (m_set_cmd.raw[5] & 0xF0) | (get_cmd_resp.data.mode & 0x0F);
 
-        // Рахуємо XOR
+        // Перераховуємо XOR контрольної суми
         uint8_t xor_byte = 0;
         for (size_t i = 0; i < sizeof(m_set_cmd.raw) - 1; i++) {
             xor_byte ^= m_set_cmd.raw[i];
