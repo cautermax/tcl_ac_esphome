@@ -102,50 +102,54 @@ void TCLClimate::control_vertical_swing(const std::string &swing_mode) {}
 void TCLClimate::control_horizontal_swing(const std::string &swing_mode) {}
 
 void TCLClimate::control(const climate::ClimateCall &call) {
-    // 1. Копіюємо останній стабільний стан від кондиціонера
     get_cmd_resp_t get_cmd_resp = {0};
     memcpy(get_cmd_resp.raw, m_get_cmd_resp.raw, sizeof(get_cmd_resp.raw));
     bool should_build_cmd = false;
 
-    // 2. ОБРОБКА РЕЖИМІВ (За твоїм алгоритмом тестування)
+    // 1. ОБРОБКА РЕЖИМІВ
     if (call.get_mode().has_value()) {
         climate::ClimateMode climate_mode = *call.get_mode();
         if (climate_mode == climate::CLIMATE_MODE_OFF) {
-            get_cmd_resp.data.power = 0x02; // Код вимкнення живлення
-            get_cmd_resp.data.mode = 0x00;  // Скидаємо режим
+            get_cmd_resp.data.power = 0x02; // Вимкнено
+            get_cmd_resp.data.mode = 0x00;  
         } else {
-            get_cmd_resp.data.power = 0x03; // Код увімкнення живлення
+            get_cmd_resp.data.power = 0x03; // Увімкнено
             
-            // Твій алгоритм відправки, який дав правильні результати:
+            // Наша залізна матриця
             switch (climate_mode) {
-                case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break; // 01 увімкне HEAT
-                case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break; // 02 увімкне DRY
-                case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break; // 03 увімкне COOL
-                case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x05; break; // 05 увімкне FAN
-                case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x00; break; // 00 увімкне AUTO
-                default:                             get_cmd_resp.data.mode = 0x03; break; // Дефолт — COOL
+                case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x00; break; 
+                case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break; 
+                case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break; 
+                case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break; 
+                case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x04; break; 
+                default:                             get_cmd_resp.data.mode = 0x03; break; 
             }
         }
         should_build_cmd = true;
     }
 
-    // 3. ОБРОБКА ТЕМПЕРАТУРИ
+    // 2. ОБРОБКА ТЕМПЕРАТУРИ (З розумним блокуванням)
     if (call.get_target_temperature().has_value()) {
         float temp = *call.get_target_temperature();
         get_cmd_resp.data.temp = static_cast<uint8_t>(temp) - 16;
         should_build_cmd = true;
     }
 
-    // 4. ЗБИРАЄМО ПАКЕТ НА ВІДПРАВКУ
+    // 👇 НАШ ГОЛОВНИЙ ФІКС 👇
+    // Якщо режим AUTO (0x00) або FAN_ONLY (0x04) — залізо пульта занулює байти температури.
+    // get_cmd_resp.data.temp = 0 означає 16°C у сирих байтах, що для плат є нейтральною заглушкою.
+    if (get_cmd_resp.data.mode == 0x00 || get_cmd_resp.data.mode == 0x04) {
+        get_cmd_resp.data.temp = 0x00; 
+    }
+
+    // 3. ЗБИРАЄМО ПАКЕТ
     if (should_build_cmd) {
         build_set_cmd(&get_cmd_resp);
         
-        // КРИТИЧНИЙ ФІКС: Примусово перезаписуємо байт режиму в сирому масиві відправки,
-        // щоб обійти баг з накладанням бітових полів структури.
-        // У стандартному пакеті TCL режим сидить у молодшому ніблі 5-го байта.
+        // Записуємо режим у 5-й байт
         m_set_cmd.raw[5] = (m_set_cmd.raw[5] & 0xF0) | (get_cmd_resp.data.mode & 0x0F);
 
-        // Перераховуємо контрольну суму XOR, бо ми змінили байт вручну
+        // Рахуємо XOR
         uint8_t xor_byte = 0;
         for (size_t i = 0; i < sizeof(m_set_cmd.raw) - 1; i++) {
             xor_byte ^= m_set_cmd.raw[i];
