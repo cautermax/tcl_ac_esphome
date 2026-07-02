@@ -162,6 +162,7 @@ climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   
+  // Додаємо підтримувані режими
   traits.set_supported_modes({
     climate::CLIMATE_MODE_OFF, 
     climate::CLIMATE_MODE_COOL, 
@@ -170,6 +171,17 @@ climate::ClimateTraits TCLClimate::traits() {
     climate::CLIMATE_MODE_FAN_ONLY,
     climate::CLIMATE_MODE_AUTO
   });
+  
+  // КРИТИЧНИЙ ФІКС ДЛЯ КАРТКИ В HA:
+  // Прибираємо підтримку цільової температури для AUTO, DRY та FAN_ONLY
+  // Це автоматично приховає крутилки та стрілочки в інтерфейсі Home Assistant для цих режимів
+  if (this->mode == climate::CLIMATE_MODE_AUTO || 
+      this->mode == climate::CLIMATE_MODE_DRY || 
+      this->mode == climate::CLIMATE_MODE_FAN_ONLY) {
+      traits.add_feature_flags(climate::CLIMATE_SUPPORTS_TARGET_TEMPERATURE_NONE);
+  } else {
+      traits.add_feature_flags(climate::CLIMATE_SUPPORTS_TARGET_TEMPERATURE);
+  }
   
   traits.set_visual_min_temperature(16.0);
   traits.set_visual_max_temperature(31.0);
@@ -238,7 +250,7 @@ void TCLClimate::loop() {
                 uint8_t low_nibble  = (byte7 & 0x0F);  
 
                 // 1. Розбір стану живлення та режимів
-                if (low_nibble == 0x00) {
+                if (low_nibble == 0x00 || high_nibble == 0x02) {
                     this->set_mode(climate::CLIMATE_MODE_OFF);
                 } else {
                     switch (low_nibble) {
