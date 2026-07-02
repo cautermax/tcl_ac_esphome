@@ -71,8 +71,14 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     m_set_cmd.data.eco = 0;
     
     // Перевірка на турбо режим
-    m_set_cmd.data.turbo = (get_cmd_resp->data.fan == 0x03) ? 1 : 0;
-    m_set_cmd.data.mute = 0;
+    // Перевіряємо, чи прийшов маркер Турбо
+    if (get_cmd_resp->data.fan == 0x0F) {
+        m_set_cmd.data.turbo = 1;      // Вмикаємо фізичний біт Турбо на платі кондиціонера
+        m_set_cmd.data.fan = 0x05;    // Виставляємо максимальну швидкість обертання
+    } else {
+        m_set_cmd.data.turbo = 0;      // Вимикаємо біт Турбо
+        m_set_cmd.data.fan = get_cmd_resp->data.fan; // Передаємо звичайну швидкість (0x00, 0x02, 0x03, 0x05)
+    }
 
     // ПЕРЕДАЄМО РЕЖИМ ТА ФАН НАПРЯМУ (БЕЗ MODE_MAP ТА FAN_MAP)
     m_set_cmd.data.mode = get_cmd_resp->data.mode;
@@ -139,24 +145,25 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-// 🔥 3.5. ОСТАТОЧНА КОРЕКЦІЯ КОДІВ ВЕНТИЛЯТОРА
+// 🔥 3.5. ОСТАТОЧНА КОРЕКЦІЯ КОДІВ ВЕНТИЛЯТОРА ТА ТУРБО
     std::string active_fan = this->get_custom_fan_mode();
     
     if (!call.get_custom_fan_mode().empty()) {
         active_fan = call.get_custom_fan_mode();
     }
 
-    // Прописуємо чітку карту, яку ми вирахували експериментально
     if (active_fan == "1") {
         get_cmd_resp.data.fan = 0x02; // Швидкість 1
     } else if (active_fan == "2") {
         get_cmd_resp.data.fan = 0x03; // Швидкість 2
-    } else if (active_fan == "3" || active_fan == "Turbo") {
-        get_cmd_resp.data.fan = 0x05; // Для турбо теж шлемо максимальну 3-ю швидкість + увімкнеться біт турбо
+    } else if (active_fan == "3") {
+        get_cmd_resp.data.fan = 0x05; // Швидкість 3
+    } else if (active_fan == "Turbo") {
+        // Шлемо максимальну швидкість + ставимо спец-маркер для функції build_set_cmd
+        get_cmd_resp.data.fan = 0x0F; 
     } else {
         get_cmd_resp.data.fan = 0x00; // "Automatic"
     }
-
     // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ
     if (should_build_cmd) {
         build_set_cmd(&get_cmd_resp);
