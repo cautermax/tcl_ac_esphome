@@ -177,18 +177,6 @@ climate::ClimateTraits TCLClimate::traits() {
   traits.set_visual_min_temperature(16.0);
   traits.set_visual_max_temperature(31.0);
   traits.set_visual_target_temperature_step(1.0);
-
-  // 👇 ОФІЦІЙНИЙ І ПРАВИЛЬНИЙ СПОСІБ ЗМІНИ КРУТИЛКИ В ESPHOME 👇
-  if (this->mode == climate::CLIMATE_MODE_AUTO || 
-      this->mode == climate::CLIMATE_MODE_DRY || 
-      this->mode == climate::CLIMATE_MODE_FAN_ONLY) {
-      
-      // Вимикаємо термостат для цих режимів (крутилка зникне, але кімнатна температура залишиться)
-      traits.set_supports_target_temperature(false);
-  } else {
-      // Вмикаємо термостат для COOL та HEAT
-      traits.set_supports_target_temperature(true);
-  }
   
   return traits;
 }
