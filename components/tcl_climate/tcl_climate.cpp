@@ -72,17 +72,14 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     m_set_cmd.data.turbo = (get_cmd_resp->data.fan == 0x03) ? 1 : 0;
     m_set_cmd.data.mute = 0;
 
-    static constexpr uint8_t MODE_MAP[] = { 0x00, 0x03, 0x02, 0x07, 0x01, 0x08 };
-    if (get_cmd_resp->data.mode < sizeof(MODE_MAP)) {
-        m_set_cmd.data.mode = MODE_MAP[get_cmd_resp->data.mode];
-    }
+    // 👇 ПЕРЕДАЄМО РЕЖИМ НАПРЯМУ БЕЗ КРИВИХ МАСИВІВ 👇
+    m_set_cmd.data.mode = get_cmd_resp->data.mode;
 
+    // Розрахунок температури для відправки (кондиціонер чекає інвертоване значення)
     m_set_cmd.data.temp = 15 - get_cmd_resp->data.temp;
 
-    static constexpr uint8_t FAN_MAP[] = { 0x00, 0x02, 0x03, 0x05, 0x06, 0x07 };
-    if (get_cmd_resp->data.fan < sizeof(FAN_MAP)) {
-        m_set_cmd.data.fan = FAN_MAP[get_cmd_resp->data.fan];
-    }
+    // Передаємо вентилятор напряму
+    m_set_cmd.data.fan = get_cmd_resp->data.fan;
 
     m_set_cmd.data.vswing = 0;
     m_set_cmd.data.hswing = 0;
