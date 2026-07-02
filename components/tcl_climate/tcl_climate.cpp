@@ -178,7 +178,7 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         // 🔥 ТЕСТ СИРОГО БІТА ТУРБО ДЛЯ ВІДПРАВКИ:
         // У протоколі запису TCL біт Турбо (Strong) дуже часто сидить у 6-му байті (індекс 6) під маскою 0x20.
         if (is_turbo_selected) {
-            m_set_cmd.raw[6] |= 0x20; 
+            m_set_cmd.raw[6] |= 0x80; 
         }
 
         // Перераховуємо XOR контрольної суми
