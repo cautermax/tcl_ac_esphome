@@ -117,11 +117,11 @@ void TCLClimate::control(const climate::ClimateCall &call) {
             
             // Наша залізна матриця
             switch (climate_mode) {
-                case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x00; break; 
+                case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x06; break; 
                 case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break; 
                 case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break; 
                 case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break; 
-                case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x04; break; 
+                case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x07; break; 
                 default:                             get_cmd_resp.data.mode = 0x03; break; 
             }
         }
