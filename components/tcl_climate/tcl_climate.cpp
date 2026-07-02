@@ -160,11 +160,8 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
-  
-  // Додаємо підтримку датчика поточної температури в кімнаті
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   
-  // Додаємо всі наші режими в інтерфейс
   traits.set_supported_modes({
     climate::CLIMATE_MODE_OFF, 
     climate::CLIMATE_MODE_COOL, 
@@ -174,15 +171,16 @@ climate::ClimateTraits TCLClimate::traits() {
     climate::CLIMATE_MODE_AUTO
   });
   
-  traits.set_visual_min_temperature(16.0);
-  traits.set_visual_max_temperature(31.0);
-  
-  // КРИТИЧНИЙ ФІКС: якщо режим AUTO, DRY або FAN — ставимо крок 0, щоб приховати регулятор температури в HA
+  // Якщо режим не потребує температури, затискаємо ліміти в одну точку
   if (this->mode == climate::CLIMATE_MODE_AUTO || 
       this->mode == climate::CLIMATE_MODE_DRY || 
       this->mode == climate::CLIMATE_MODE_FAN_ONLY) {
-      traits.set_visual_target_temperature_step(0.0);
+      traits.set_visual_min_temperature(this->target_temperature);
+      traits.set_visual_max_temperature(this->target_temperature);
+      traits.set_visual_target_temperature_step(1.0);
   } else {
+      traits.set_visual_min_temperature(16.0);
+      traits.set_visual_max_temperature(31.0);
       traits.set_visual_target_temperature_step(1.0);
   }
   
@@ -251,7 +249,7 @@ void TCLClimate::loop() {
                 uint8_t high_nibble = (byte7 & 0xF0);
 
                 // 1. Розбір стану живлення та режимів
-                if (low_nibble == 0x00 || high_nibble == 0x02) {
+                if (low_nibble == 0x00 || high_nibble == 0x20) {
                     this->set_mode(climate::CLIMATE_MODE_OFF);
                 } else {
                     switch (low_nibble) {
