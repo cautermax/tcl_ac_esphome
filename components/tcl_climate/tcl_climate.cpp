@@ -203,8 +203,11 @@ void TCLClimate::loop() {
 
                 this->is_changed = true;
 
-                // 1. Розбір стану живлення (Байт 7, старші 4 біти)
-                if (m_get_cmd_resp.data.power == 0x03) {
+                // 1. Розбір стану живлення (Байт 7, перевіряємо чи увімкнено через бітову маску)
+                // І 0x30 (пакет з пульта), і 0xB0 (пакет після команди з HA) мають активний біт живлення.
+                uint8_t power_raw = m_get_cmd_resp.data.power;
+
+                if (power_raw == 0x03 || power_raw == 0x0B || power_raw == 0x3 || power_raw == 0xB) {
                     // Розбір режимів роботи (Байт 7, молодші 4 біти)
                     if (m_get_cmd_resp.data.mode == 0x04) {
                         this->set_mode(climate::CLIMATE_MODE_HEAT);
