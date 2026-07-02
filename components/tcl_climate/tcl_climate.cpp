@@ -203,30 +203,37 @@ void TCLClimate::loop() {
 
                 this->is_changed = true;
 
-                // 1. Розбір стану живлення (Байт 7, перевіряємо чи увімкнено через бітову маску)
-                // І 0x30 (пакет з пульта), і 0xB0 (пакет після команди з HA) мають активний біт живлення.
-                uint8_t power_raw = m_get_cmd_resp.data.power;
+                // ЧИТАЄМО 7-Й БАЙТ НАПРЯМУ З СИРОГО МАСИВУ
+                uint8_t byte7 = m_get_cmd_resp.raw[7]; // Отримуємо сирі 0x31, 0xB1, 0x34 або 0xB4
+                uint8_t high_nibble = (byte7 & 0xF0);  // Старша частина (0x30 або 0xB0)
+                uint8_t low_nibble  = (byte7 & 0x0F);  // Молодша частина (0x01 або 0x04)
 
-                if (power_raw == 0x03 || power_raw == 0x0B || power_raw == 0x3 || power_raw == 0xB) {
-                    // Розбір режимів роботи (Байт 7, молодші 4 біти)
-                    if (m_get_cmd_resp.data.mode == 0x04) {
-                        this->set_mode(climate::CLIMATE_MODE_HEAT);
+                // 1. Розбір стану живлення та режимів
+                // Якщо старша половина байту дорівнює 0x30 (з пульта) або 0xB0 (з HA) — кондиціонер працює!
+                if (high_nibble == 0x30 || high_nibble == 0xB0) {
+                    if (low_nibble == 0x04) {
+                        this->set_mode(climate::CLIMATE_MODE_HEAT); // 4 - Обігрів
                     } else {
-                        this->set_mode(climate::CLIMATE_MODE_COOL);
+                        this->set_mode(climate::CLIMATE_MODE_COOL); // 1 - Охолодження
                     }
                 } else {
-                    this->set_mode(climate::CLIMATE_MODE_OFF);
+                    this->set_mode(climate::CLIMATE_MODE_OFF); // Якщо там 0x20 або щось інше — вимкнено
                 }
 
-                // 2. Розбір швидкості вентилятора (Байт 8, старші 4 біти)
-                if (m_get_cmd_resp.data.fan == 0x03) {
+                // ЧИТАЄМО 8-Й БАЙТ НАПРЯМУ З СИРОГО МАСИВУ
+                uint8_t byte8 = m_get_cmd_resp.raw[8];
+                uint8_t fan_raw = (byte8 & 0xF0) >> 4; // Старша частина (швидкість вентилятора)
+                uint8_t temp_raw = (byte8 & 0x0F);     // Молодша частина (цільова температура)
+
+                // 2. Розбір швидкості вентилятора
+                if (fan_raw == 0x03) {
                     this->set_custom_fan_mode(StringRef("Turbo"));
                 } else {
                     this->set_custom_fan_mode(StringRef("Automatic"));
                 }
 
-                // 3. Розбір Цільової температури (Байт 8, молодші 4 біти)
-                float target_t = m_get_cmd_resp.data.temp + 16;
+                // 3. Розбір Цільової температури
+                float target_t = temp_raw + 16;
                 this->set_target_temperature(target_t);
 
                 // Датчик поточної температури в кімнаті (приблизний розрахунок)
