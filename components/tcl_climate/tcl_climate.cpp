@@ -139,7 +139,7 @@ void TCLClimate::control(const climate::ClimateCall &call) {
     // Якщо режим AUTO (0x00) або FAN_ONLY (0x04) — залізо пульта занулює байти температури.
     // get_cmd_resp.data.temp = 0 означає 16°C у сирих байтах, що для плат є нейтральною заглушкою.
     if (get_cmd_resp.data.mode == 0x00 || get_cmd_resp.data.mode == 0x04) {
-        get_cmd_resp.data.temp = 0x00; 
+        get_cmd_resp.data.temp = 0x0F; 
     }
 
     // 3. ЗБИРАЄМО ПАКЕТ
