@@ -160,9 +160,11 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
+  
+  // Додаємо підтримку датчика поточної температури в кімнаті
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   
-  // Додаємо підтримувані режими
+  // Додаємо всі наші режими в інтерфейс
   traits.set_supported_modes({
     climate::CLIMATE_MODE_OFF, 
     climate::CLIMATE_MODE_COOL, 
@@ -172,20 +174,18 @@ climate::ClimateTraits TCLClimate::traits() {
     climate::CLIMATE_MODE_AUTO
   });
   
-  // КРИТИЧНИЙ ФІКС ДЛЯ КАРТКИ В HA:
-  // Прибираємо підтримку цільової температури для AUTO, DRY та FAN_ONLY
-  // Це автоматично приховає крутилки та стрілочки в інтерфейсі Home Assistant для цих режимів
+  traits.set_visual_min_temperature(16.0);
+  traits.set_visual_max_temperature(31.0);
+  
+  // КРИТИЧНИЙ ФІКС: якщо режим AUTO, DRY або FAN — ставимо крок 0, щоб приховати регулятор температури в HA
   if (this->mode == climate::CLIMATE_MODE_AUTO || 
       this->mode == climate::CLIMATE_MODE_DRY || 
       this->mode == climate::CLIMATE_MODE_FAN_ONLY) {
-      traits.add_feature_flags(climate::CLIMATE_SUPPORTS_TARGET_TEMPERATURE_NONE);
+      traits.set_visual_target_temperature_step(0.0);
   } else {
-      traits.add_feature_flags(climate::CLIMATE_SUPPORTS_TARGET_TEMPERATURE);
+      traits.set_visual_target_temperature_step(1.0);
   }
   
-  traits.set_visual_min_temperature(16.0);
-  traits.set_visual_max_temperature(31.0);
-  traits.set_visual_target_temperature_step(1.0);
   return traits;
 }
 
@@ -247,7 +247,8 @@ void TCLClimate::loop() {
                 this->is_changed = true;
 
                 uint8_t byte7 = m_get_cmd_resp.raw[7]; 
-                uint8_t low_nibble  = (byte7 & 0x0F);  
+                uint8_t low_nibble  = (byte7 & 0x0F);
+                uint8_t high_nibble = (byte7 & 0xF0);
 
                 // 1. Розбір стану живлення та режимів
                 if (low_nibble == 0x00 || high_nibble == 0x02) {
