@@ -160,8 +160,8 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
-  traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   
+  // 1. Спочатку задаємо базові режими
   traits.set_supported_modes({
     climate::CLIMATE_MODE_OFF, 
     climate::CLIMATE_MODE_COOL, 
@@ -171,17 +171,26 @@ climate::ClimateTraits TCLClimate::traits() {
     climate::CLIMATE_MODE_AUTO
   });
   
-  // Якщо режим не потребує температури, затискаємо ліміти в одну точку
+  traits.set_visual_min_temperature(16.0);
+  traits.set_visual_max_temperature(31.0);
+  traits.set_visual_target_temperature_step(1.0);
+
+  // 2. ЖОРСТКИЙ НАДПИС ПРАПОРЦІВ (Override)
+  // Замість add_feature_flags ми використовуємо set_feature_flags, 
+  // щоб повністю контролювати бітову маску можливостей.
   if (this->mode == climate::CLIMATE_MODE_AUTO || 
       this->mode == climate::CLIMATE_MODE_DRY || 
       this->mode == climate::CLIMATE_MODE_FAN_ONLY) {
-      traits.set_visual_min_temperature(this->target_temperature);
-      traits.set_visual_max_temperature(this->target_temperature);
-      traits.set_visual_target_temperature_step(1.0);
+      
+      // Залишаємо ТІЛЬКИ підтримку поточної температури в кімнаті, 
+      // цільову температуру (термостат) сюди НЕ ПИШЕМО.
+      traits.set_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   } else {
-      traits.set_visual_min_temperature(16.0);
-      traits.set_visual_max_temperature(31.0);
-      traits.set_visual_target_temperature_step(1.0);
+      // Для COOL та HEAT додаємо обидва прапорці через побітове АБО (|)
+      traits.set_feature_flags(
+        climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE | 
+        climate::CLIMATE_SUPPORTS_TARGET_TEMPERATURE
+      );
   }
   
   return traits;
