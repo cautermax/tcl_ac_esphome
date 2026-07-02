@@ -61,7 +61,9 @@ void TCLClimate::set_target_temperature(float target_temperature) {
 void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     memcpy(m_set_cmd.raw, set_cmd_base, sizeof(m_set_cmd.raw));
 
+    // Виставляємо біт живлення: 1 - увімкнено, 0 - вимкнено
     m_set_cmd.data.power = (get_cmd_resp->data.power == 0x03) ? 1 : 0;
+    
     m_set_cmd.data.off_timer_en = 0;
     m_set_cmd.data.on_timer_en = 0;
     m_set_cmd.data.beep = 1;
@@ -72,19 +74,18 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     m_set_cmd.data.turbo = (get_cmd_resp->data.fan == 0x03) ? 1 : 0;
     m_set_cmd.data.mute = 0;
 
-    // 👇 ПЕРЕДАЄМО РЕЖИМ НАПРЯМУ БЕЗ КРИВИХ МАСИВІВ 👇
+    // Передаємо режим і швидкість вентилятора безпосередньо 
     m_set_cmd.data.mode = get_cmd_resp->data.mode;
-
-    // Розрахунок температури для відправки (кондиціонер чекає інвертоване значення)
-    m_set_cmd.data.temp = 15 - get_cmd_resp->data.temp;
-
-    // Передаємо вентилятор напряму
     m_set_cmd.data.fan = get_cmd_resp->data.fan;
+
+    // Розрахунок температури для відправки (інвертована логіка кондиціонера)
+    m_set_cmd.data.temp = 15 - get_cmd_resp->data.temp;
 
     m_set_cmd.data.vswing = 0;
     m_set_cmd.data.hswing = 0;
     m_set_cmd.data.half_degree = 0;
 
+    // Рахуємо контрольну суму XOR
     uint8_t xor_byte = 0;
     for (size_t i = 0; i < sizeof(m_set_cmd.raw) - 1; i++) {
         xor_byte ^= m_set_cmd.raw[i];
@@ -108,16 +109,18 @@ void TCLClimate::control(const climate::ClimateCall &call) {
     if (call.get_mode().has_value()) {
         climate::ClimateMode climate_mode = *call.get_mode();
         if (climate_mode == climate::CLIMATE_MODE_OFF) {
-            get_cmd_resp.data.power = 0x02; // Код вимкнення
+            get_cmd_resp.data.power = 0x02; // Ставимо байт вимкнення 
         } else {
-            get_cmd_resp.data.power = 0x03; // Код увімкнення
+            get_cmd_resp.data.power = 0x03; // Ставимо байт увімкнення
+            
+            // СИНХРОНІЗОВАНО З LOOP: 1=COOL, 2=DRY, 3=FAN, 4=HEAT, 5=AUTO
             switch (climate_mode) {
                 case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x01; break;
                 case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x03; break;
                 case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x02; break;
                 case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x04; break;
                 case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x05; break;
-                default:                             get_cmd_resp.data.mode = 0x02; break;
+                default:                             get_cmd_resp.data.mode = 0x01; break;
             }
         }
         should_build_cmd = true;
@@ -134,7 +137,6 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         ready_to_send_set_cmd_flag = true;
     }
 }
-
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
@@ -222,8 +224,8 @@ void TCLClimate::loop() {
                 } else {
                     switch (low_nibble) {
                         case 0x01: this->set_mode(climate::CLIMATE_MODE_COOL); break;
-                        case 0x02: this->set_mode(climate::CLIMATE_MODE_DRY); break;
-                        case 0x03: this->set_mode(climate::CLIMATE_MODE_FAN_ONLY); break;
+                        case 0x03: this->set_mode(climate::CLIMATE_MODE_DRY); break;
+                        case 0x02: this->set_mode(climate::CLIMATE_MODE_FAN_ONLY); break;
                         case 0x04: this->set_mode(climate::CLIMATE_MODE_HEAT); break;
                         case 0x05: this->set_mode(climate::CLIMATE_MODE_AUTO); break;
                         default:   this->set_mode(climate::CLIMATE_MODE_COOL); break; 
