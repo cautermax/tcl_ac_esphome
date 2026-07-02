@@ -145,43 +145,38 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-// 🔥 3.5. ПРАВИЛЬНА ОБРОБКА ШВИДКОСТЕЙ ТА ТУРБО (БЕЗ ЗЛАМУ СТРУКТУРИ)
+// 🔥 3.5. ОСТАТОЧНА КОРЕКЦІЯ ШВИДКОСТЕЙ ТА ТУРБО НА ПРЯМИХ БАЙТАХ
     std::string active_fan = this->get_custom_fan_mode();
     
     if (!call.get_custom_fan_mode().empty()) {
         active_fan = call.get_custom_fan_mode();
     }
 
-    bool is_turbo_selected = false;
+    uint8_t fan_code = 0x00; // Авто за замовчуванням
+    bool is_turbo_on = false;
 
-    // Повертаємо твої 100% робочі коди для швидкостей
     if (active_fan == "1") {
-        get_cmd_resp.data.fan = 0x02; // Швидкість 1
+        fan_code = 0x01; 
     } else if (active_fan == "2") {
-        get_cmd_resp.data.fan = 0x03; // Швидкість 2
+        fan_code = 0x02; 
     } else if (active_fan == "3") {
-        get_cmd_resp.data.fan = 0x05; // Швидкість 3
+        fan_code = 0x03; // Робимо чисту 3-тю швидкість
     } else if (active_fan == "Turbo") {
-        get_cmd_resp.data.fan = 0x05;   // Для турбо теж шлемо максимальну 3-ю швидкість
-        is_turbo_selected = true;       // Маркер для активації біта Турбо
-    } else {
-        get_cmd_resp.data.fan = 0x00; // "Automatic"
+        fan_code = 0x03; // Для турбо швидкість теж 3-тя...
+        is_turbo_on = true; // ...але вмикаємо маску 0x80!
     }
 
-    // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ ТА НАКЛАДАЄМО СИРІ БІТИ
+    // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ
     if (should_build_cmd) {
-        // Обов'язково обнуляємо ламаний біт у структурі, щоб він не псував байт швидкості
-        get_cmd_resp.data.turbo = 0; 
-        
         build_set_cmd(&get_cmd_resp);
         
-        // Жорстко фіксуємо байт режиму, як і раніше
-        m_set_cmd.raw[5] = (m_set_cmd.raw[5] & 0xF0) | (get_cmd_resp.data.mode & 0x0F);
+        // Маскуємо 5-й байт відправки:
+        // Молодші 4 біти (0-3) — це режим (mode), старші 4 біти (4-7) — це вентилятор (fan)
+        m_set_cmd.raw[5] = (fan_code << 4) | (get_cmd_resp.data.mode & 0x0F);
 
-        // 🔥 ТЕСТ СИРОГО БІТА ТУРБО ДЛЯ ВІДПРАВКИ:
-        // У протоколі запису TCL біт Турбо (Strong) дуже часто сидить у 6-му байті (індекс 6) під маскою 0x20.
-        if (is_turbo_selected) {
-            m_set_cmd.raw[6] |= 0x20; 
+        // 🔥 Якщо вибрано пресет Турбо — виставляємо найстарший біт (0x80) у 5-му байті
+        if (is_turbo_on) {
+            m_set_cmd.raw[5] |= 0x80;
         }
 
         // Перераховуємо XOR контрольної суми
