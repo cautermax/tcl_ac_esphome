@@ -149,11 +149,13 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 
     // Переводимо текст у перевірені залізом коди TCL
     if (active_fan == "1") {
-        get_cmd_resp.data.fan = 0x01;
-    } else if (active_fan == "2") {
         get_cmd_resp.data.fan = 0x02;
-    } else if (active_fan == "3" || active_fan == "Turbo") {
+    } else if (active_fan == "2") {
         get_cmd_resp.data.fan = 0x03;
+    } else if (active_fan == "3") {
+        get_cmd_resp.data.fan = 0x04;
+      else if (active_fan == "Turbo") {
+        get_cmd_resp.data.fan = 0x05; // Для турбо спробуємо максимальний код 0x05
     } else {
         get_cmd_resp.data.fan = 0x00; // "Automatic" або дефолт
     }
