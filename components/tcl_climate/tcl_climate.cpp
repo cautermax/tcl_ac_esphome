@@ -219,9 +219,9 @@ if (high_nibble == 0x30 || high_nibble == 0xB0) {
 } else if (high_nibble == 0xA0) {
     // Якщо прилітає A0 — кондиціонер офіційно в режимі очікування (Вимкнений)
     this->set_mode(climate::CLIMATE_MODE_OFF);
-} else {
-    this->set_mode(climate::CLIMATE_MODE_OFF); 
-}
+}// else {
+  //  this->set_mode(climate::CLIMATE_MODE_OFF); 
+//}
 
                 // ЧИТАЄМО 8-Й БАЙТ НАПРЯМУ З СИРОГО МАСИВУ
                 uint8_t byte8 = m_get_cmd_resp.raw[8];
