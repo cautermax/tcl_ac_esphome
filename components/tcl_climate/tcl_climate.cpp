@@ -270,12 +270,21 @@ void TCLClimate::loop() {
                     default:   this->set_custom_fan_mode(StringRef("Automatic")); break;
                 }
 
-                // 3. Розбір Цільової температури
+// 3. Розбір Цільової температури
                 float target_t = temp_raw + 16;
                 this->set_target_temperature(target_t);
 
-                // Датчик поточної температури
-                this->set_current_temperature(target_t); 
+                // 🔥 4. Новий розбір ПОТОЧНОЇ РЕАЛЬНОЇ температури (Байт 17)
+                uint8_t raw_current_temp = m_get_cmd_resp.raw[17];
+                
+                // Захист: якщо пристрій раптом пришле нуль у сміттєвому пакеті, 
+                // тимчасово підстрахуємося цільовою, інакше — рахуємо чесну температуру
+                if (raw_current_temp > 0) {
+                    float calculated_current_temp = (static_cast<float>(raw_current_temp) / 3.0f) - 11.33f;
+                    this->set_current_temperature(calculated_current_temp);
+                } else {
+                    this->set_current_temperature(target_t); 
+                }
 
                 if (this->is_changed) {
                     this->publish_state();
