@@ -209,19 +209,22 @@ void TCLClimate::loop() {
                 uint8_t low_nibble  = (byte7 & 0x0F);  // Молодша частина (0x01 або 0x04)
 
                 // 1. Розбір стану живлення та режимів
-                // Якщо старша половина байту дорівнює 0x30 (з пульта) або 0xB0 (з HA) — кондиціонер працює!
-if (high_nibble == 0x30 || high_nibble == 0xB0) {
-    if (low_nibble == 0x04) {
-        this->set_mode(climate::CLIMATE_MODE_HEAT); // 4 - Обігрів
-    } else {
-        this->set_mode(climate::CLIMATE_MODE_COOL); // 1 - Охолодження
-    }
-} else if (high_nibble == 0xA0) {
-    // Якщо прилітає A0 — кондиціонер офіційно в режимі очікування (Вимкнений)
+if (high_nibble == 0xA0) {
+    // Якщо перший напівбайт 'A' — кондиціонер 100% вимкнений
     this->set_mode(climate::CLIMATE_MODE_OFF);
-}// else {
-  //  this->set_mode(climate::CLIMATE_MODE_OFF); 
-//}
+} else {
+    // В усіх інших випадках кондиціонер вважається УВІМКНЕНИМ
+    switch (low_nibble) {
+        case 0x04:
+            this->set_mode(climate::CLIMATE_MODE_HEAT); // Обігрів
+            break;
+        case 0x01:
+        default:
+            // Якщо 0x01 або будь-який інший невідомий підрежим — вмикаємо Охолодження
+            this->set_mode(climate::CLIMATE_MODE_COOL); 
+            break;
+    }
+}
 
                 // ЧИТАЄМО 8-Й БАЙТ НАПРЯМУ З СИРОГО МАСИВУ
                 uint8_t byte8 = m_get_cmd_resp.raw[8];
