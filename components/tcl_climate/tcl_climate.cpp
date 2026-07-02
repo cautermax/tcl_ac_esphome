@@ -124,8 +124,8 @@ void TCLClimate::control(const climate::ClimateCall &call) {
             case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break; // HEAT = 01
             case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break; // DRY  = 02
             case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break; // COOL = 03
-            case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x07; break; // FAN  = 07 (Знайдено! 🎉)
-            case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x08; break; // AUTO = 08 (Знайдено! 🎉)
+            case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x07; break; // FAN  = 07
+            case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x08; break; // AUTO = 08
             default:                             get_cmd_resp.data.mode = 0x03; break; 
         }
     }
@@ -136,8 +136,25 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         float temp = *call.get_target_temperature();
         get_cmd_resp.data.temp = static_cast<uint8_t>(temp) - 16;
     } else {
-        // Якщо міняється режим, а не температура — беремо поточну виставлену в HA температуру
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
+    }
+
+    // 🔥 3.5. ОБРОБКА ШВИДКОСТІ ВЕНТИЛЯТОРА (СИЛА ВІТРУ)
+    // Беремо обрану в HA швидкість, якщо вона змінилася, інакше — поточну
+    std::string active_fan = this->get_custom_fan_mode();
+    if (call.get_custom_fan_mode().has_value()) {
+        active_fan = *call.get_custom_fan_mode();
+    }
+
+    // Переводимо текст у перевірені залізом коди TCL
+    if (active_fan == "1") {
+        get_cmd_resp.data.fan = 0x01;
+    } else if (active_fan == "2") {
+        get_cmd_resp.data.fan = 0x02;
+    } else if (active_fan == "3" || active_fan == "Turbo") {
+        get_cmd_resp.data.fan = 0x03;
+    } else {
+        get_cmd_resp.data.fan = 0x00; // "Automatic" або дефолт
     }
 
     // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ
