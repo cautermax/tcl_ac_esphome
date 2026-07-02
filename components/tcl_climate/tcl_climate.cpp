@@ -145,38 +145,42 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-// 🔥 3.5. ОСТАТОЧНА КОРЕКЦІЯ ШВИДКОСТЕЙ ТА ТУРБО НА ПРЯМИХ БАЙТАХ
+// 🔥 3.5. ОСТАТОЧНА КОРЕКЦІЯ КОДІВ ВЕНТИЛЯТОРА ТА ТУРБО
     std::string active_fan = this->get_custom_fan_mode();
     
     if (!call.get_custom_fan_mode().empty()) {
         active_fan = call.get_custom_fan_mode();
     }
 
-    uint8_t fan_code = 0x00; // Авто за замовчуванням
-    bool is_turbo_on = false;
+    bool is_turbo_selected = false;
 
     if (active_fan == "1") {
-        fan_code = 0x01; 
+        get_cmd_resp.data.fan = 0x02; // Швидкість 1
     } else if (active_fan == "2") {
-        fan_code = 0x02; 
+        get_cmd_resp.data.fan = 0x03; // Швидкість 2
     } else if (active_fan == "3") {
-        fan_code = 0x03; // Робимо чисту 3-тю швидкість
+        get_cmd_resp.data.fan = 0x05; // Швидкість 3
     } else if (active_fan == "Turbo") {
-        fan_code = 0x03; // Для турбо швидкість теж 3-тя...
-        is_turbo_on = true; // ...але вмикаємо маску 0x80!
+        get_cmd_resp.data.fan = 0x05; // Для турбо шлемо максимальну 3-ю швидкість
+        is_turbo_selected = true;     // Запам'ятовуємо, що вибрано Турбо
+    } else {
+        get_cmd_resp.data.fan = 0x00; // "Automatic"
     }
 
     // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ
     if (should_build_cmd) {
+        // Очищаємо прапорець турбо в структурі, щоб він не заважав бітам швидкості
+        get_cmd_resp.data.turbo = 0; 
+        
         build_set_cmd(&get_cmd_resp);
         
-        // Маскуємо 5-й байт відправки:
-        // Молодші 4 біти (0-3) — це режим (mode), старші 4 біти (4-7) — це вентилятор (fan)
-        m_set_cmd.raw[5] = (fan_code << 4) | (get_cmd_resp.data.mode & 0x0F);
+        // Жорстко записуємо правильний байт режиму в масив відправки, обнуляючи сміття
+        m_set_cmd.raw[5] = (m_set_cmd.raw[5] & 0xF0) | (get_cmd_resp.data.mode & 0x0F);
 
-        // 🔥 Якщо вибрано пресет Турбо — виставляємо найстарший біт (0x80) у 5-му байті
-        if (is_turbo_on) {
-            m_set_cmd.raw[5] |= 0x80;
+        // 🔥 ХІД КОНЕМ: Якщо вибрано Турбо, піднімаємо біт прямо в сирому байті відправки.
+        // У TCL біт турбо часто сидить у 7-му байті (це індекс 7). Пробуємо маску 0x10.
+        if (is_turbo_selected) {
+            m_set_cmd.raw[7] |= 0x10; // Накладаємо біт турбо поверх існуючих налаштувань
         }
 
         // Перераховуємо XOR контрольної суми
