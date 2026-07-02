@@ -145,13 +145,16 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-// 🔥 3.5. ОСТАТОЧНА КОРЕКЦІЯ КОДІВ ВЕНТИЛЯТОРА ТА ТУРБО
+// 🔥 3.5. ПРАВИЛЬНА ОБРОБКА ШВИДКОСТЕЙ ТА ТУРБО (БЕЗ ЗЛАМУ СТРУКТУРИ)
     std::string active_fan = this->get_custom_fan_mode();
     
     if (!call.get_custom_fan_mode().empty()) {
         active_fan = call.get_custom_fan_mode();
     }
 
+    bool is_turbo_selected = false;
+
+    // Повертаємо твої 100% робочі коди для швидкостей
     if (active_fan == "1") {
         get_cmd_resp.data.fan = 0x02; // Швидкість 1
     } else if (active_fan == "2") {
@@ -159,17 +162,27 @@ void TCLClimate::control(const climate::ClimateCall &call) {
     } else if (active_fan == "3") {
         get_cmd_resp.data.fan = 0x05; // Швидкість 3
     } else if (active_fan == "Turbo") {
-        // Шлемо максимальну швидкість + ставимо спец-маркер для функції build_set_cmd
-        get_cmd_resp.data.fan = 0x0F; 
+        get_cmd_resp.data.fan = 0x05;   // Для турбо теж шлемо максимальну 3-ю швидкість
+        is_turbo_selected = true;       // Маркер для активації біта Турбо
     } else {
         get_cmd_resp.data.fan = 0x00; // "Automatic"
     }
-    // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ
+
+    // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ ТА НАКЛАДАЄМО СИРІ БІТИ
     if (should_build_cmd) {
+        // Обов'язково обнуляємо ламаний біт у структурі, щоб він не псував байт швидкості
+        get_cmd_resp.data.turbo = 0; 
+        
         build_set_cmd(&get_cmd_resp);
         
-        // Жорстко записуємо правильний байт режиму в масив відправки, обнуляючи сміття
+        // Жорстко фіксуємо байт режиму, як і раніше
         m_set_cmd.raw[5] = (m_set_cmd.raw[5] & 0xF0) | (get_cmd_resp.data.mode & 0x0F);
+
+        // 🔥 ТЕСТ СИРОГО БІТА ТУРБО ДЛЯ ВІДПРАВКИ:
+        // У протоколі запису TCL біт Турбо (Strong) дуже часто сидить у 6-му байті (індекс 6) під маскою 0x20.
+        if (is_turbo_selected) {
+            m_set_cmd.raw[6] |= 0x20; 
+        }
 
         // Перераховуємо XOR контрольної суми
         uint8_t xor_byte = 0;
@@ -180,7 +193,6 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 
         ready_to_send_set_cmd_flag = true;
     }
-}
 
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
