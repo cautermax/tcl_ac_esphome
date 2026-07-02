@@ -154,7 +154,7 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.fan = 0x03;
     } else if (active_fan == "3") {
         get_cmd_resp.data.fan = 0x04;
-      else if (active_fan == "Turbo") {
+    } else if (active_fan == "Turbo") {
         get_cmd_resp.data.fan = 0x05; // Для турбо спробуємо максимальний код 0x05
     } else {
         get_cmd_resp.data.fan = 0x00; // "Automatic" або дефолт
