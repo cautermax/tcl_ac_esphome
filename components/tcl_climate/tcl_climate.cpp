@@ -139,25 +139,22 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-// 🔥 3.5. ОБРОБКА ШВИДКОСТІ ВЕНТИЛЯТОРА (СИЛА ВІТРУ)
+// 🔥 3.5. ОСТАТОЧНА КОРЕКЦІЯ КОДІВ ВЕНТИЛЯТОРА
     std::string active_fan = this->get_custom_fan_mode();
     
-    // Перевіряємо, чи прийшов новий режим з Home Assistant
     if (!call.get_custom_fan_mode().empty()) {
-        active_fan = call.get_custom_fan_mode(); // Беремо напряму без зірочки
+        active_fan = call.get_custom_fan_mode();
     }
 
-    // Переводимо текст у перевірені залізом коди TCL
+    // Прописуємо чітку карту, яку ми вирахували експериментально
     if (active_fan == "1") {
-        get_cmd_resp.data.fan = 0x02;
+        get_cmd_resp.data.fan = 0x02; // Швидкість 1
     } else if (active_fan == "2") {
-        get_cmd_resp.data.fan = 0x03;
-    } else if (active_fan == "3") {
-        get_cmd_resp.data.fan = 0x04;
-    } else if (active_fan == "Turbo") {
-        get_cmd_resp.data.fan = 0x05; // Для турбо спробуємо максимальний код 0x05
+        get_cmd_resp.data.fan = 0x03; // Швидкість 2
+    } else if (active_fan == "3" || active_fan == "Turbo") {
+        get_cmd_resp.data.fan = 0x05; // Для турбо теж шлемо максимальну 3-ю швидкість + увімкнеться біт турбо
     } else {
-        get_cmd_resp.data.fan = 0x00; // "Automatic" або дефолт
+        get_cmd_resp.data.fan = 0x00; // "Automatic"
     }
 
     // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ
