@@ -74,7 +74,7 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     m_set_cmd.data.turbo = (get_cmd_resp->data.fan == 0x03) ? 1 : 0;
     m_set_cmd.data.mute = 0;
 
-    // Передаємо режим і швидкість вентилятора безпосередньо 
+    // ПЕРЕДАЄМО РЕЖИМ ТА ФАН НАПРЯМУ (БЕЗ MODE_MAP ТА FAN_MAP)
     m_set_cmd.data.mode = get_cmd_resp->data.mode;
     m_set_cmd.data.fan = get_cmd_resp->data.fan;
 
@@ -110,14 +110,15 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         climate::ClimateMode climate_mode = *call.get_mode();
         if (climate_mode == climate::CLIMATE_MODE_OFF) {
             get_cmd_resp.data.power = 0x02; // Ставимо байт вимкнення 
+            get_cmd_resp.data.mode = 0x00;  // Очищаємо режим при вимкненні
         } else {
             get_cmd_resp.data.power = 0x03; // Ставимо байт увімкнення
             
-            // СИНХРОНІЗОВАНО З LOOP: 1=COOL, 2=DRY, 3=FAN, 4=HEAT, 5=AUTO
+            // Чітка синхронізація з loop: 1=COOL, 2=FAN, 3=DRY, 4=HEAT, 5=AUTO
             switch (climate_mode) {
                 case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x01; break;
-                case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x03; break;
                 case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x02; break;
+                case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x03; break;
                 case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x04; break;
                 case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x05; break;
                 default:                             get_cmd_resp.data.mode = 0x01; break;
@@ -137,11 +138,11 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         ready_to_send_set_cmd_flag = true;
     }
 }
+
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
   
-  // Додаємо всі нові режими в інтерфейс Home Assistant
   traits.set_supported_modes({
     climate::CLIMATE_MODE_OFF, 
     climate::CLIMATE_MODE_COOL, 
@@ -215,17 +216,16 @@ void TCLClimate::loop() {
                 this->is_changed = true;
 
                 uint8_t byte7 = m_get_cmd_resp.raw[7]; 
-                uint8_t high_nibble = (byte7 & 0xF0);  
                 uint8_t low_nibble  = (byte7 & 0x0F);  
 
                 // 1. Розбір стану живлення та режимів
-                if (high_nibble == 0xA0) {
+                if (low_nibble == 0x00) {
                     this->set_mode(climate::CLIMATE_MODE_OFF);
                 } else {
                     switch (low_nibble) {
                         case 0x01: this->set_mode(climate::CLIMATE_MODE_COOL); break;
-                        case 0x03: this->set_mode(climate::CLIMATE_MODE_DRY); break;
-                        case 0x02: this->set_mode(climate::CLIMATE_MODE_FAN_ONLY); break;
+                        case 0x02: this->set_mode(climate::CLIMATE_MODE_FAN_ONLY); break; 
+                        case 0x03: this->set_mode(climate::CLIMATE_MODE_DRY); break;      
                         case 0x04: this->set_mode(climate::CLIMATE_MODE_HEAT); break;
                         case 0x05: this->set_mode(climate::CLIMATE_MODE_AUTO); break;
                         default:   this->set_mode(climate::CLIMATE_MODE_COOL); break; 
