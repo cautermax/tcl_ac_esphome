@@ -66,7 +66,7 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     
     m_set_cmd.data.off_timer_en = 0;
     m_set_cmd.data.on_timer_en = 0;
-    m_set_cmd.data.beep = 1;
+    m_set_cmd.data.beep = 0;
     m_set_cmd.data.disp = 1;
     m_set_cmd.data.eco = 0;
     
