@@ -161,7 +161,10 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
   
-  // 1. Спочатку задаємо базові режими
+  // Вмикаємо підтримку датчика кімнатної температури
+  traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
+  
+  // Задаємо список усіх режимів
   traits.set_supported_modes({
     climate::CLIMATE_MODE_OFF, 
     climate::CLIMATE_MODE_COOL, 
@@ -175,22 +178,16 @@ climate::ClimateTraits TCLClimate::traits() {
   traits.set_visual_max_temperature(31.0);
   traits.set_visual_target_temperature_step(1.0);
 
-  // 2. ЖОРСТКИЙ НАДПИС ПРАПОРЦІВ (Override)
-  // Замість add_feature_flags ми використовуємо set_feature_flags, 
-  // щоб повністю контролювати бітову маску можливостей.
+  // 👇 ОФІЦІЙНИЙ І ПРАВИЛЬНИЙ СПОСІБ ЗМІНИ КРУТИЛКИ В ESPHOME 👇
   if (this->mode == climate::CLIMATE_MODE_AUTO || 
       this->mode == climate::CLIMATE_MODE_DRY || 
       this->mode == climate::CLIMATE_MODE_FAN_ONLY) {
       
-      // Залишаємо ТІЛЬКИ підтримку поточної температури в кімнаті, 
-      // цільову температуру (термостат) сюди НЕ ПИШЕМО.
-      traits.set_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
+      // Вимикаємо термостат для цих режимів (крутилка зникне, але кімнатна температура залишиться)
+      traits.set_supports_target_temperature(false);
   } else {
-      // Для COOL та HEAT додаємо обидва прапорці через побітове АБО (|)
-      traits.set_feature_flags(
-        climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE | 
-        climate::CLIMATE_SUPPORTS_TARGET_TEMPERATURE
-      );
+      // Вмикаємо термостат для COOL та HEAT
+      traits.set_supports_target_temperature(true);
   }
   
   return traits;
