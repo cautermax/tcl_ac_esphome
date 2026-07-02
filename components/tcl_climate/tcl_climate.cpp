@@ -139,11 +139,12 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-    // 🔥 3.5. ОБРОБКА ШВИДКОСТІ ВЕНТИЛЯТОРА (СИЛА ВІТРУ)
-    // Беремо обрану в HA швидкість, якщо вона змінилася, інакше — поточну
+// 🔥 3.5. ОБРОБКА ШВИДКОСТІ ВЕНТИЛЯТОРА (СИЛА ВІТРУ)
     std::string active_fan = this->get_custom_fan_mode();
-    if (call.get_custom_fan_mode().has_value()) {
-        active_fan = *call.get_custom_fan_mode();
+    
+    // Перевіряємо, чи прийшов новий режим з Home Assistant
+    if (!call.get_custom_fan_mode().empty()) {
+        active_fan = call.get_custom_fan_mode(); // Беремо напряму без зірочки
     }
 
     // Переводимо текст у перевірені залізом коди TCL
