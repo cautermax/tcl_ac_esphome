@@ -17,7 +17,16 @@ class TCLClimate : public climate::Climate, public uart::UARTDevice, public Poll
   std::string hswing_pos = "";
   std::string vswing_pos = "";
 
-  // Перероблено під Новий 21-байтний протокол TCL/Ballu
+  // 🔥 СВІЖІ ЗМІННІ ТА МЕТОДИ ДЛЯ ТЕСТУВАННЯ I-FEEL
+  uint8_t test_ifeel_byte_index = 15; // Індекс байта для тесту (14-30)
+  uint8_t test_ifeel_val = 0;         // Значення температури/байта
+  bool test_ifeel_enable = false;     // Увімкнути/Вимкнути впорскування
+
+  void set_test_byte_index(float idx) { this->test_ifeel_byte_index = static_cast<uint8_t>(idx); }
+  void set_test_byte_val(float val) { this->test_ifeel_val = static_cast<uint8_t>(val); }
+  void set_test_byte_enable(bool enable) { this->test_ifeel_enable = enable; }
+
+  // 21-байтний протокол відповіді TCL
   union get_cmd_resp_t {
     struct {
       uint8_t header;     // 0xBB
@@ -28,13 +37,11 @@ class TCLClimate : public climate::Climate, public uart::UARTDevice, public Poll
       uint8_t byte_5;     // 0x01
       uint8_t byte_6;     // 0x00
       
-      // Байт 7: Стан та Режим
-      uint8_t mode : 4;   // Молодші 4 біти: 1 - cool, 4 - heat
-      uint8_t power : 4;  // Старші 4 біти: 3 - ON, 2 - OFF
+      uint8_t mode : 4;   // 1 - cool, 4 - heat
+      uint8_t power : 4;  // 3 - ON, 2 - OFF
 
-      // Байт 8: Температура та Вентилятор
-      uint8_t temp : 4;   // Молодші 4 біти: температура (+16)
-      uint8_t fan : 4;    // Старші 4 біти: швидкість вентилятора
+      uint8_t temp : 4;   // температура (+16)
+      uint8_t fan : 4;    // швидкість вентилятора
 
       uint8_t byte_9;
       uint8_t byte_10;
@@ -44,16 +51,17 @@ class TCLClimate : public climate::Climate, public uart::UARTDevice, public Poll
       uint8_t byte_14;
       uint8_t byte_15;
       uint8_t byte_16;
-      uint8_t byte_17;
+      uint8_t byte_17;    // Поточна реальна температура кондиціонера
       uint8_t byte_18;
       uint8_t byte_19;
       uint8_t byte_20;
       
-      uint8_t xor_sum;    // Контрольна сума в кінці 21-го байту
+      uint8_t xor_sum;    // Контрольна сума в кінці
     } data;
-    uint8_t raw[21];      // Тепер довжина пакету відповіді чітко 21 байт
+    uint8_t raw[21];
   };
 
+  // 35-байтний пакет відправки
   union set_cmd_t {
     struct {
       uint8_t header;
