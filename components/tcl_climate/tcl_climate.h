@@ -17,16 +17,11 @@ class TCLClimate : public climate::Climate, public uart::UARTDevice, public Poll
   std::string hswing_pos = "";
   std::string vswing_pos = "";
 
-  // 🔥 СВІЖІ ЗМІННІ ТА МЕТОДИ ДЛЯ ТЕСТУВАННЯ I-FEEL
-  uint8_t test_ifeel_byte_index = 15; // Індекс байта для тесту (14-30)
-  uint8_t test_ifeel_val = 0;         // Значення температури/байта
-  bool test_ifeel_enable = false;     // Увімкнути/Вимкнути впорскування
+  // 🔥 Засувка для обробки швидких послідовних команд з HA / Versatile Thermostat
+  climate::ClimateMode pending_mode{climate::CLIMATE_MODE_OFF};
+  bool has_pending_mode{false};
 
-  void set_test_byte_index(float idx) { this->test_ifeel_byte_index = static_cast<uint8_t>(idx); }
-  void set_test_byte_val(float val) { this->test_ifeel_val = static_cast<uint8_t>(val); }
-  void set_test_byte_enable(bool enable) { this->test_ifeel_enable = enable; }
-
-  // 21-байтний протокол відповіді TCL
+  // 21-байтний протокол відповіді від плати TCL
   union get_cmd_resp_t {
     struct {
       uint8_t header;     // 0xBB
@@ -61,7 +56,7 @@ class TCLClimate : public climate::Climate, public uart::UARTDevice, public Poll
     uint8_t raw[21];
   };
 
-  // 35-байтний пакет відправки
+  // 35-байтний пакет відправки на плату TCL
   union set_cmd_t {
     struct {
       uint8_t header;
