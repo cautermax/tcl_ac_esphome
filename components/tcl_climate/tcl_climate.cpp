@@ -8,7 +8,7 @@ namespace tcl_climate {
 
 static constexpr uint8_t REQ_CMD[] = {0xBB, 0x00, 0x01, 0x04, 0x02, 0x01, 0x00, 0xBD};
 static constexpr int MAX_LINE_LENGTH = 100;
-static constexpr int UPDATE_INTERVAL_MS = 2000; // Робимо 2 сек, щоб не забивати UART запитами
+static constexpr int UPDATE_INTERVAL_MS = 2000;
 
 void TCLClimate::set_current_temperature(float current_temperature) {
   if (std::abs(this->current_temperature - current_temperature) < 0.1f) return;
@@ -61,7 +61,6 @@ void TCLClimate::set_target_temperature(float target_temperature) {
 void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     memcpy(m_set_cmd.raw, set_cmd_base, sizeof(m_set_cmd.raw));
 
-    // Виставляємо біт живлення: 1 - увімкнено, 0 - вимкнено
     m_set_cmd.data.power = (get_cmd_resp->data.power == 0x03) ? 1 : 0;
     
     m_set_cmd.data.off_timer_en = 0;
@@ -70,28 +69,30 @@ void TCLClimate::build_set_cmd(get_cmd_resp_t *get_cmd_resp) {
     m_set_cmd.data.disp = 1;
     m_set_cmd.data.eco = 0;
     
-    // Перевірка на турбо режим
-    // Перевіряємо, чи прийшов маркер Турбо
     if (get_cmd_resp->data.fan == 0x0F) {
-        m_set_cmd.data.turbo = 1;      // Вмикаємо фізичний біт Турбо на платі кондиціонера
-        m_set_cmd.data.fan = 0x05;    // Виставляємо максимальну швидкість обертання
+        m_set_cmd.data.turbo = 1;
+        m_set_cmd.data.fan = 0x05;
     } else {
-        m_set_cmd.data.turbo = 0;      // Вимикаємо біт Турбо
-        m_set_cmd.data.fan = get_cmd_resp->data.fan; // Передаємо звичайну швидкість (0x00, 0x02, 0x03, 0x05)
+        m_set_cmd.data.turbo = 0;
+        m_set_cmd.data.fan = get_cmd_resp->data.fan;
     }
 
-    // ПЕРЕДАЄМО РЕЖИМ ТА ФАН НАПРЯМУ (БЕЗ MODE_MAP ТА FAN_MAP)
     m_set_cmd.data.mode = get_cmd_resp->data.mode;
     m_set_cmd.data.fan = get_cmd_resp->data.fan;
-
-    // Розрахунок температури для відправки (інвертована логіка кондиціонера)
     m_set_cmd.data.temp = 15 - get_cmd_resp->data.temp;
 
     m_set_cmd.data.vswing = 0;
     m_set_cmd.data.hswing = 0;
     m_set_cmd.data.half_degree = 0;
 
-    // Рахуємо контрольну суму XOR
+    // 🔥 СВІЖИЙ БЛОК: ВПОРСКУВАННЯ ТЕСТОВОГО БАЙТА I-FEEL
+    if (this->test_ifeel_enable && this->test_ifeel_byte_index < (sizeof(m_set_cmd.raw) - 1)) {
+        m_set_cmd.raw[this->test_ifeel_byte_index] = this->test_ifeel_val;
+        ESP_LOGI("TCL_IFEEL", ">>> ВПОРСКУВАННЯ: Raw Byte[%d] = 0x%02X (%d) <<<", 
+                 this->test_ifeel_byte_index, this->test_ifeel_val, this->test_ifeel_val);
+    }
+
+    // Розрахунок XOR
     uint8_t xor_byte = 0;
     for (size_t i = 0; i < sizeof(m_set_cmd.raw) - 1; i++) {
         xor_byte ^= m_set_cmd.raw[i];
@@ -112,32 +113,27 @@ void TCLClimate::control(const climate::ClimateCall &call) {
     memcpy(get_cmd_resp.raw, m_get_cmd_resp.raw, sizeof(get_cmd_resp.raw));
     bool should_build_cmd = false;
 
-    // 1. ВИЗНАЧАЄМО РЕЖИМ (Завжди беремо поточний актуальний режим з Home Assistant)
     climate::ClimateMode active_mode = this->mode; 
     if (call.get_mode().has_value()) {
-        active_mode = *call.get_mode(); // Якщо користувач клацнув новий режим — беремо його
+        active_mode = *call.get_mode();
     }
 
-    // 2. КОДУЄМО ЖИВЛЕННЯ ТА РЕЖИМ НАПРЯМУ
     if (active_mode == climate::CLIMATE_MODE_OFF) {
-        get_cmd_resp.data.power = 0x02; // Код вимкнення живлення
+        get_cmd_resp.data.power = 0x02;
         get_cmd_resp.data.mode = 0x00;  
     } else {
-        get_cmd_resp.data.power = 0x03; // Код увімкнення живлення
-        
-        // Твоя фінальна перевірена залізна карта кодів
+        get_cmd_resp.data.power = 0x03;
         switch (active_mode) {
-            case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break; // HEAT = 01
-            case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break; // DRY  = 02
-            case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break; // COOL = 03
-            case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x07; break; // FAN  = 07
-            case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x08; break; // AUTO = 08
+            case climate::CLIMATE_MODE_HEAT:     get_cmd_resp.data.mode = 0x01; break;
+            case climate::CLIMATE_MODE_DRY:      get_cmd_resp.data.mode = 0x02; break;
+            case climate::CLIMATE_MODE_COOL:     get_cmd_resp.data.mode = 0x03; break;
+            case climate::CLIMATE_MODE_FAN_ONLY: get_cmd_resp.data.mode = 0x07; break;
+            case climate::CLIMATE_MODE_AUTO:     get_cmd_resp.data.mode = 0x08; break;
             default:                             get_cmd_resp.data.mode = 0x03; break; 
         }
     }
     should_build_cmd = true;
 
-    // 3. ОБРОБКА ТЕМПЕРАТУРИ
     if (call.get_target_temperature().has_value()) {
         float temp = *call.get_target_temperature();
         get_cmd_resp.data.temp = static_cast<uint8_t>(temp) - 16;
@@ -145,43 +141,35 @@ void TCLClimate::control(const climate::ClimateCall &call) {
         get_cmd_resp.data.temp = static_cast<uint8_t>(this->target_temperature) - 16;
     }
 
-// 🔥 3.5. ПРАВИЛЬНА ОБРОБКА ШВИДКОСТЕЙ ТА ТУРБО (БЕЗ ЗЛАМУ СТРУКТУРИ)
     std::string active_fan = this->get_custom_fan_mode();
-    
     if (!call.get_custom_fan_mode().empty()) {
         active_fan = call.get_custom_fan_mode();
     }
 
     bool is_turbo_selected = false;
-
-    // Повертаємо твої 100% робочі коди для швидкостей
     if (active_fan == "1") {
-        get_cmd_resp.data.fan = 0x02; // Швидкість 1
+        get_cmd_resp.data.fan = 0x02;
     } else if (active_fan == "2") {
-        get_cmd_resp.data.fan = 0x03; // Швидкість 2
+        get_cmd_resp.data.fan = 0x03;
     } else if (active_fan == "3") {
-        get_cmd_resp.data.fan = 0x05; // Швидкість 3
+        get_cmd_resp.data.fan = 0x05;
     } else if (active_fan == "Turbo") {
-        get_cmd_resp.data.fan = 0x05;   // Для турбо теж шлемо максимальну 3-ю швидкість
-        is_turbo_selected = true;       // Маркер для активації біта Турбо
+        get_cmd_resp.data.fan = 0x05;
+        is_turbo_selected = true;
     } else {
-        get_cmd_resp.data.fan = 0x00; // "Automatic"
+        get_cmd_resp.data.fan = 0x00;
     }
 
-    // 4. ЗБИРАЄМО СИРИЙ ПАКЕТ ТА НАКЛАДАЄМО СИРІ БІТИ
     if (should_build_cmd) {
         build_set_cmd(&get_cmd_resp);
         
-        // Жорстко фіксуємо байт режиму, як і раніше
         m_set_cmd.raw[5] = (m_set_cmd.raw[5] & 0xF0) | (get_cmd_resp.data.mode & 0x0F);
 
-        // 🔥 ТЕСТ СИРОГО БІТА ТУРБО ДЛЯ ВІДПРАВКИ:
-        // У протоколі запису TCL біт Турбо (Strong) дуже часто сидить у 6-му байті (індекс 6) під маскою 0x20.
         if (is_turbo_selected) {
             m_set_cmd.raw[7] |= 0x80; 
         }
 
-        // Перераховуємо XOR контрольної суми
+        // 🔥 ПЕРЕРАХУНОК XOR ПІСЛЯ УСІХ МАНІПУЛЯЦІЙ ТА ВПОРСКУВАННЯ
         uint8_t xor_byte = 0;
         for (size_t i = 0; i < sizeof(m_set_cmd.raw) - 1; i++) {
             xor_byte ^= m_set_cmd.raw[i];
@@ -194,11 +182,7 @@ void TCLClimate::control(const climate::ClimateCall &call) {
 
 climate::ClimateTraits TCLClimate::traits() {
   auto traits = climate::ClimateTraits();
-  
-  // Вмикаємо підтримку датчика кімнатної температури
   traits.add_feature_flags(climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
-  
-  // Задаємо список усіх режимів
   traits.set_supported_modes({
     climate::CLIMATE_MODE_OFF, 
     climate::CLIMATE_MODE_COOL, 
@@ -207,11 +191,9 @@ climate::ClimateTraits TCLClimate::traits() {
     climate::CLIMATE_MODE_FAN_ONLY,
     climate::CLIMATE_MODE_AUTO
   });
-  
   traits.set_visual_min_temperature(16.0);
   traits.set_visual_max_temperature(31.0);
   traits.set_visual_target_temperature_step(1.0);
-  
   return traits;
 }
 
@@ -276,7 +258,6 @@ void TCLClimate::loop() {
                 uint8_t low_nibble  = (byte7 & 0x0F);
                 uint8_t high_nibble = (byte7 & 0xF0);
 
-                // 1. Розбір стану живлення та режимів
                 if (low_nibble == 0x00 || high_nibble == 0x20) {
                     this->set_mode(climate::CLIMATE_MODE_OFF);
                 } else {
@@ -290,12 +271,10 @@ void TCLClimate::loop() {
                     }
                 }
 
-                // ЧИТАЄМО 8-Й БАЙТ
                 uint8_t byte8 = m_get_cmd_resp.raw[8];
                 uint8_t fan_raw = (byte8 & 0xF0) >> 4; 
                 uint8_t temp_raw = (byte8 & 0x0F);     
 
-                // 2. Розбір швидкості вентилятора (01=Шв.1, 02=Шв.2, 03=Шв.3/Турбо, 00=Авто)
                 switch (fan_raw) {
                     case 0x01: this->set_custom_fan_mode(StringRef("1")); break;
                     case 0x02: this->set_custom_fan_mode(StringRef("2")); break;
@@ -304,15 +283,10 @@ void TCLClimate::loop() {
                     default:   this->set_custom_fan_mode(StringRef("Automatic")); break;
                 }
 
-// 3. Розбір Цільової температури
                 float target_t = temp_raw + 16;
                 this->set_target_temperature(target_t);
 
-                // 🔥 4. Новий розбір ПОТОЧНОЇ РЕАЛЬНОЇ температури (Байт 17)
                 uint8_t raw_current_temp = m_get_cmd_resp.raw[17];
-                
-                // Захист: якщо пристрій раптом пришле нуль у сміттєвому пакеті, 
-                // тимчасово підстрахуємося цільовою, інакше — рахуємо чесну температуру
                 if (raw_current_temp > 0) {
                     float calculated_current_temp = (static_cast<float>(raw_current_temp) / 3.0f) - 11.33f;
                     this->set_current_temperature(calculated_current_temp);
